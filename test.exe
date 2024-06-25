@@ -1,0 +1,108 @@
+from flask import Flask, render_template_string, request
+import pandas as pd
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+
+app = Flask(__name__)
+
+def load_data(file_path, num_rows=10):
+    if os.path.exists(file_path): 
+        print("Using local file")
+        url = file_path
+
+    df = pd.read_csv(url, delimiter=',', nrows=num_rows)
+    df.dataframeName = 'test.csv'
+    nRow, nCol = df.shape
+    fake_accounts = df[df['fake'] == 1]['profile username'].unique()
+    return df, f'There are {nRow} rows and {nCol} columns', fake_accounts, f'Number of Fake Accounts: {len(fake_accounts)}'
+
+def plotPerColumnDistribution(df, nGraphShown, nGraphPerRow):
+    nunique = df.nunique()
+    df = df[[col for col in df if nunique[col] > 1 and nunique[col] < 50]]  # pick columns with 1 to 50 unique levels
+    nRow, nCol = df.shape
+    columnNames = list(df)
+    nGraphRow = (nCol + nGraphPerRow - 1) // nGraphPerRow
+    plt.figure(num=None, figsize=(6 * nGraphPerRow, 8 * nGraphRow), dpi=80, facecolor='w', edgecolor='k')
+    for i in range(min(nCol, nGraphShown)):
+        plt.subplot(nGraphRow, nGraphPerRow, i + 1)
+        columndf = df.iloc[:, i]
+        if not np.issubdtype(type(columndf.iloc[0]), np.number):
+            valueCounts = columndf.value_counts()
+            valueCounts.plot.bar()
+        else:
+            columndf.hist()
+        plt.ylabel('counts')
+        plt.xticks(rotation=90)
+        plt.title(f"{columnNames[i]} (column {i})")
+    plt.tight_layout(pad=1.0, w_pad=1.0, h_pad=1.0)
+    plt.show()
+
+@app.route('/')
+def display_dataframe():
+    file_path = request.args.get('file_path')
+    num_rows = request.args.get('num_rows', type=int)
+    if file_path and num_rows:
+        df, rows_and_cols, fake_accounts, fake_accounts_count = load_data(file_path, num_rows)
+        html_table = df.to_html()
+        return render_template_string(
+            """
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Data Frame Display</title>
+            </head>
+            <body>
+                <h1>Data Frame Display</h1>
+                <p>{{ rows_and_cols }}</p>
+                <p>Fake Account IDs: {{ fake_accounts }}</p>
+                <p>{{ fake_accounts_count }}</p>
+                {{ table|safe }}
+            </body>
+            </html>
+            """,
+            table=html_table,
+            rows_and_cols=rows_and_cols,
+            fake_accounts=fake_accounts,
+            fake_accounts_count=fake_accounts_count
+        )
+    else:
+        return render_template_string(
+            """
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Data Frame Display</title>
+            </head>
+            <body>
+                <h1>Data Frame Display</h1>
+                <form action="/" method="get">
+                    <label for="file_path">File Path:</label>
+                    <input type="text" id="file_path" name="file_path"><br><br>
+                    <label for="num_rows">Number of Rows:</label>
+                    <input type="number" id="num_rows" name="num_rows"><br><br>
+                    <input type="submit" value="Submit">
+                </form>
+            </body>
+            </html>
+            """
+        )
+
+@app.route('/plot_distribution', methods=['GET'])
+def plot_distribution():
+    file_path = request.args.get('file_path')
+    num_rows = request.args.get('num_rows', type=int)
+
+    if file_path and num_rows:
+        df, _, _, _ = load_data(file_path, num_rows)
+        plotPerColumnDistribution(df, 8, 4)
+        return "Plots generated successfully."
+    else:
+        return "Please provide file_path and num_rows parameters."
+
+if __name__ == '__main__':
+    app.run(debug=True)
